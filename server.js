@@ -1,5 +1,6 @@
+// server.js
 const express = require('express');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI } = require('@google/generative-ai'); // 引入 Google Generative AI 库
 const dotenv = require('dotenv');
 const cors = require('cors');
 
@@ -10,49 +11,43 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 app.use(cors());
-app.use(express.static('public')); 
+app.use(express.static('public'));
 
-if (!process.env.GEMINI_API_KEY) {
+// 检查 API 密钥是否已设置
+if (!process.env.GEMINI_API_KEY) { // 更改为 GEMINI_API_KEY
     throw new Error("GEMINI_API_KEY is not defined.");
 }
 
+// 初始化 Gemini 客户端
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.post('/chat', async (req, res) => {
     try {
-        const { message, image } = req.body;
+        const { message } = req.body;
 
-        if (!message && !image) {
-            return res.status(400).json({ error: 'Message or image is required' });
+        if (!message) {
+            return res.status(400).json({ error: 'Message is required' });
         }
 
-        let model;
-        let promptParts = [];
-        const textPart = { text: message || "" };
+        console.log("Using Gemini Pro model."); // 更新日志信息
+        
+        // 获取模型实例，这里使用 'gemini-pro'，你也可以根据需要选择其他模型
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-        if (image) {
-            console.log("Image received, using gemini-pro-vision model.");
-            model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
-            const imagePart = { inlineData: { mimeType: image.mimeType, data: image.data } };
-            promptParts = [textPart, imagePart];
-        } else {
-            console.log("No image, using gemini-pro model.");
-            model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-            promptParts = [textPart];
-        }
-        
-        const result = await model.generateContentStream({
-            contents: [{ role: "user", parts: promptParts }],
-            generationConfig: { maxOutputTokens: 8192 },
-        });
-        
+        // 发送消息并获取流式响应
+        const result = await model.generateContentStream(message);
+
+        // 设置响应头以进行流式传输
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         
+        // 流式处理响应并发送给客户端
         for await (const chunk of result.stream) {
-            const chunkText = chunk.text();
-            res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+            const chunkText = chunk.text(); // 获取文本内容
+            if (chunkText) {
+                res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+            }
         }
         res.end();
     } catch (error) {
@@ -63,4 +58,4 @@ app.post('/chat', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
-}); // <-- 这一行的 }); 在上次被截断了，现在是完整的。
+});
